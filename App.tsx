@@ -11,19 +11,16 @@ const App: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [userApiKey, setUserApiKey] = useState<string | null>(localStorage.getItem('ARCH_VISION_KEY'));
   const [keyInputValue, setKeyInputValue] = useState('');
-  
   const [refImage, setRefImage] = useState<ImageFile | null>(null);
   const [prompt, setPrompt] = useState<string>('');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [isMaskingModalOpen, setIsMaskingModalOpen] = useState(false);
   const [maskBase64, setMaskBase64] = useState<string | null>(null);
-  
   const [state, setState] = useState<GenerationState>({
     isGenerating: false,
     error: null,
   });
-
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Check for API Key source on mount
@@ -54,14 +51,16 @@ const App: React.FC = () => {
     }
   };
 
+  // ✅ 수정됨: AIza... 및 AQ. 형식 모두 허용
   const handleSaveCustomKey = () => {
-    if (keyInputValue.trim().startsWith('AIza')) {
-      localStorage.setItem('ARCH_VISION_KEY', keyInputValue.trim());
-      setUserApiKey(keyInputValue.trim());
+    const trimmedKey = keyInputValue.trim();
+    if (trimmedKey.startsWith('AIza') || trimmedKey.startsWith('AQ.')) {
+      localStorage.setItem('ARCH_VISION_KEY', trimmedKey);
+      setUserApiKey(trimmedKey);
       setHasApiKey(true);
       setState({ ...state, error: null });
     } else {
-      alert('올바른 Gemini API 키 형식이 아닙니다. (AIza...로 시작해야 합니다)');
+      alert('올바른 Gemini API 키 형식이 아닙니다. (AIza... 또는 AQ.로 시작해야 합니다)');
     }
   };
 
@@ -79,8 +78,8 @@ const App: React.FC = () => {
     }
   }, [history]);
 
-  const activeItem = activeStepId 
-    ? history.find(item => item.id === activeStepId) 
+  const activeItem = activeStepId
+    ? history.find(item => item.id === activeStepId)
     : (history.length > 0 ? history[history.length - 1] : null);
 
   const handleInitialUpload = async (imageFile: ImageFile | null) => {
@@ -104,24 +103,19 @@ const App: React.FC = () => {
 
   const handleGenerate = async () => {
     if (!activeItem) return;
-    
     const sourceData = activeItem.rawBase64 || activeItem.imageUrl;
-    const sourceMimeType = activeItem.mimeType || 'image/png'; 
-
+    const sourceMimeType = activeItem.mimeType || 'image/png';
     setState({ isGenerating: true, error: null });
-
     try {
       const rawBase64 = await generateArchitecturalEdit(
-        sourceData, 
+        sourceData,
         sourceMimeType,
         prompt,
         userApiKey, // Pass the custom key
         refImage?.file,
         maskBase64
       );
-
       const watermarkedDataUrl = await addWatermark(rawBase64);
-
       const newItem: HistoryItem = {
         id: Date.now().toString(),
         role: 'generated',
@@ -131,23 +125,18 @@ const App: React.FC = () => {
         prompt: prompt.trim() || (maskBase64 ? "(부분 수정 - 마스크 적용)" : "(추가 요청 없음 - 원본 유지)"),
         timestamp: Date.now(),
       };
-
       setHistory(prev => [...prev, newItem]);
       setActiveStepId(newItem.id);
       setPrompt('');
       setMaskBase64(null);
-      
       setState({ isGenerating: false, error: null });
-
     } catch (error: any) {
       console.error(error);
       const errorMsg = error.message || "알 수 없는 오류가 발생했습니다.";
-      
       if (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("invalid") || errorMsg.includes("403")) {
         alert("API 키가 유효하지 않습니다. 다시 확인해주세요.");
         handleLogoutKey();
       }
-
       setState({
         isGenerating: false,
         error: errorMsg,
@@ -177,7 +166,7 @@ const App: React.FC = () => {
 
   const handleSelectStep = (id: string) => {
     setActiveStepId(id);
-    setPrompt(''); 
+    setPrompt('');
     setMaskBase64(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -203,7 +192,6 @@ const App: React.FC = () => {
             <h1 className="text-3xl font-bold mb-2 tracking-tight">ARCH-VISION</h1>
             <p className="text-orange-100 font-light italic">Professional Architectural Evolution</p>
           </div>
-          
           <div className="p-8 space-y-6">
             <div className="text-center space-y-2">
               <h2 className="text-xl font-bold text-slate-800">API 설정이 필요합니다</h2>
@@ -231,7 +219,8 @@ const App: React.FC = () => {
                     type="password"
                     value={keyInputValue}
                     onChange={(e) => setKeyInputValue(e.target.value)}
-                    placeholder="Gemini API Key (AIza...)"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveCustomKey()}
+                    placeholder="Gemini API Key (AIza... 또는 AQ....)"
                     className="block w-full pl-10 pr-3 py-4 border border-slate-300 rounded-2xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 sm:text-sm transition-all"
                   />
                 </div>
@@ -242,9 +231,9 @@ const App: React.FC = () => {
                   키 저장 후 시작하기
                 </button>
                 <div className="text-center">
-                  <a 
-                    href="https://aistudio.google.com/app/apikey" 
-                    target="_blank" 
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
                     className="text-xs text-orange-600 hover:underline font-medium inline-flex items-center"
                   >
                     내 API 키는 어디서 받나요? <ExternalLink className="w-3 h-3 ml-1" />
@@ -269,10 +258,8 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
       <Header />
-
       <main className="flex-grow container mx-auto px-4 py-8 max-w-7xl">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
           {/* Left Panel: Inputs & Controls */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6 sticky top-8 z-10">
@@ -282,7 +269,7 @@ const App: React.FC = () => {
                   편집 설정
                 </h2>
                 <div className="flex items-center space-x-3">
-                  <button 
+                  <button
                     onClick={window.aistudio ? handleOpenKeySelector : handleLogoutKey}
                     className="text-[10px] text-slate-400 hover:text-orange-600 transition-colors flex items-center"
                     title="API 키 관리"
@@ -290,7 +277,7 @@ const App: React.FC = () => {
                     <Key className="w-3 h-3 mr-1" /> {window.aistudio ? '키 변경' : '키 삭제'}
                   </button>
                   {history.length > 0 && (
-                    <button 
+                    <button
                       onClick={handleReset}
                       className="text-xs text-slate-500 flex items-center hover:text-red-500 transition-colors"
                     >
@@ -301,8 +288,8 @@ const App: React.FC = () => {
               </div>
 
               {history.length === 0 ? (
-                <ImageUploader 
-                  label="원본 건축 이미지 업로드" 
+                <ImageUploader
+                  label="원본 건축 이미지 업로드"
                   subLabel="편집을 시작할 이미지를 선택하세요"
                   imageFile={null}
                   onImageSelected={handleInitialUpload}
@@ -315,26 +302,25 @@ const App: React.FC = () => {
                       현재 편집 대상 (Source)
                     </p>
                     {activeItem && (
-                       <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
-                         STEP {history.findIndex(h => h.id === activeItem.id) + 1}
-                       </span>
+                      <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
+                        STEP {history.findIndex(h => h.id === activeItem.id) + 1}
+                      </span>
                     )}
                   </div>
-                  
                   <div className="w-full rounded-lg overflow-hidden bg-slate-200 relative group border border-slate-300">
-                     {activeItem && (
-                       <>
-                         <img src={activeItem.imageUrl} alt="Current Source" className="w-full h-auto object-cover" />
-                         {maskBase64 && (
-                           <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                             <div className="bg-red-600 text-white px-3 py-1.5 rounded-full text-sm font-bold shadow-lg flex items-center">
-                               <CheckCircle2 className="w-4 h-4 mr-2" />
-                               마스크 적용됨
-                             </div>
-                           </div>
-                         )}
-                       </>
-                     )}
+                    {activeItem && (
+                      <>
+                        <img src={activeItem.imageUrl} alt="Current Source" className="w-full h-auto object-cover" />
+                        {maskBase64 && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <div className="bg-red-600 text-white px-3 py-1.5 rounded-full text-sm font-bold shadow-lg flex items-center">
+                              <CheckCircle2 className="w-4 h-4 mr-2" />
+                              마스크 적용됨
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                   <p className="text-xs text-slate-400 mt-2">
                     * 위 이미지가 다음 생성의 기준이 됩니다.
@@ -342,8 +328,8 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              <ImageUploader 
-                label="레퍼런스 이미지 (선택사항)" 
+              <ImageUploader
+                label="레퍼런스 이미지 (선택사항)"
                 subLabel="스타일 참고용"
                 imageFile={refImage}
                 onImageSelected={setRefImage}
@@ -358,8 +344,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setIsMaskingModalOpen(true)}
                     className={`w-full py-3 px-4 rounded-xl border-2 border-dashed flex items-center justify-center transition-all group
-                      ${maskBase64 
-                        ? 'border-red-500 bg-red-50 text-red-600 hover:bg-red-100' 
+                      ${maskBase64
+                        ? 'border-red-500 bg-red-50 text-red-600 hover:bg-red-100'
                         : 'border-slate-300 bg-white text-slate-600 hover:border-orange-500 hover:text-orange-600'
                       }
                     `}
@@ -386,13 +372,13 @@ const App: React.FC = () => {
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={maskBase64 
-                    ? "마스킹한 영역을 어떻게 바꿀지 구체적으로 입력하세요." 
+                  placeholder={maskBase64
+                    ? "마스킹한 영역을 어떻게 바꿀지 구체적으로 입력하세요."
                     : "내용을 입력하지 않으면 원본 형태를 그대로 유지합니다."
                   }
                   className={`w-full h-32 p-4 rounded-xl border transition-all resize-none text-slate-700 placeholder-slate-400
-                    ${maskBase64 
-                      ? 'border-red-300 focus:border-red-500 ring-red-100 focus:ring' 
+                    ${maskBase64
+                      ? 'border-red-300 focus:border-red-500 ring-red-100 focus:ring'
                       : 'border-slate-300 focus:border-orange-500 ring-orange-200 focus:ring'
                     }
                   `}
@@ -412,7 +398,7 @@ const App: React.FC = () => {
                 className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center transition-all shadow-md
                   ${state.isGenerating || history.length === 0
                     ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                    : maskBase64 
+                    : maskBase64
                       ? 'bg-red-600 text-white hover:bg-red-700 hover:shadow-lg'
                       : 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-lg hover:-translate-y-0.5'
                   }
@@ -440,26 +426,25 @@ const App: React.FC = () => {
                 <span className="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs mr-2">2</span>
                 결과물 미리보기
               </h2>
-
               <div className="flex items-center justify-center bg-slate-50 rounded-xl border-2 border-slate-100 min-h-[500px] relative overflow-hidden">
                 {state.isGenerating ? (
-                   <div className="text-center space-y-4">
-                   <div className="relative w-24 h-24 mx-auto">
-                     <div className="absolute inset-0 border-4 border-slate-200 rounded-full"></div>
-                     <div className="absolute inset-0 border-4 border-orange-500 rounded-full border-t-transparent animate-spin"></div>
-                   </div>
-                   <div>
-                     <h3 className="text-lg font-semibold text-slate-800">ARCH-VISION 처리중</h3>
-                     <p className="text-slate-500 text-sm mt-1">
-                       건축적 요소와 조명을 계산하고 있습니다...
-                     </p>
-                   </div>
-                 </div>
+                  <div className="text-center space-y-4">
+                    <div className="relative w-24 h-24 mx-auto">
+                      <div className="absolute inset-0 border-4 border-slate-200 rounded-full"></div>
+                      <div className="absolute inset-0 border-4 border-orange-500 rounded-full border-t-transparent animate-spin"></div>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-800">ARCH-VISION 처리중</h3>
+                      <p className="text-slate-500 text-sm mt-1">
+                        건축적 요소와 조명을 계산하고 있습니다...
+                      </p>
+                    </div>
+                  </div>
                 ) : activeItem ? (
                   <div className="relative w-full h-full flex flex-col">
-                    <img 
-                      src={activeItem.imageUrl} 
-                      alt="Current Result" 
+                    <img
+                      src={activeItem.imageUrl}
+                      alt="Current Result"
                       className="w-full h-auto max-h-[700px] object-contain shadow-lg"
                     />
                   </div>
@@ -485,19 +470,19 @@ const App: React.FC = () => {
                   {history.map((item, index) => {
                     const isActive = activeStepId === item.id;
                     return (
-                      <div 
-                        key={item.id} 
+                      <div
+                        key={item.id}
                         className={`flex flex-col md:flex-row gap-4 p-4 rounded-xl border transition-all relative
-                          ${isActive 
-                            ? 'border-orange-400 bg-orange-50 ring-1 ring-orange-200' 
+                          ${isActive
+                            ? 'border-orange-400 bg-orange-50 ring-1 ring-orange-200'
                             : 'border-slate-100 bg-slate-50 hover:border-slate-300'
                           }`}
                       >
                         <div className="w-full md:w-48 flex-shrink-0">
                           <div className="aspect-video rounded-lg overflow-hidden border border-slate-200 bg-white">
-                            <img 
-                              src={item.imageUrl} 
-                              alt={`Step ${index + 1}`} 
+                            <img
+                              src={item.imageUrl}
+                              alt={`Step ${index + 1}`}
                               className="w-full h-full object-cover cursor-pointer"
                               onClick={() => {
                                 const win = window.open();
@@ -555,7 +540,7 @@ const App: React.FC = () => {
               </button>
             </div>
             <div className="flex-grow relative bg-slate-100 flex items-center justify-center overflow-hidden">
-              <MaskEditor 
+              <MaskEditor
                 imageUrl={activeItem.imageUrl}
                 onMaskChange={(mask) => setMaskBase64(mask)}
                 onClose={() => setIsMaskingModalOpen(false)}
