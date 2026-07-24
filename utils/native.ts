@@ -31,13 +31,22 @@ export const saveImage = async (dataUrl: string, fileName: string): Promise<'nat
   }
   const { Filesystem } = window.Capacitor!.Plugins;
   const base64 = dataUrl.split(',')[1];
-  await Filesystem.writeFile({
-    path: `Pictures/ARCH-VISION/${fileName}`,
-    data: base64,
-    directory: 'EXTERNAL_STORAGE',
-    recursive: true,
-  });
-  return 'native';
+  try {
+    if (Filesystem.requestPermissions) {
+      await Filesystem.requestPermissions().catch(() => {});
+    }
+    await Filesystem.writeFile({
+      path: `Pictures/ARCH-VISION/${fileName}`,
+      data: base64,
+      directory: 'EXTERNAL_STORAGE',
+      recursive: true,
+    });
+    return 'native';
+  } catch {
+    // Android 11+ 스코프드 스토리지에서는 공용 경로 직접 쓰기가 막힘 → 공유 시트로 폴백
+    await shareImage(dataUrl, fileName);
+    return 'native';
+  }
 };
 
 /** 네이티브 공유 시트. 웹에서는 Web Share API → 저장 순 폴백 */
