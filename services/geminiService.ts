@@ -98,12 +98,53 @@ export const generateArchitecturalEdit = async (
       text: promptText,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: parts,
-      },
-    });
+    /**
+     * 이미지 모델 우선순위 (2026-05-28 GA 기준)
+     * 1순위: gemini-3.1-flash-image (Nano Banana 2, 정식 버전)
+     * 2순위: gemini-2.5-flash-image (구모델 폴백 — 종료 시 자동 스킵됨)
+     * 모델이 종료/미지원이면 다음 모델로 자동 전환하므로
+     * Google이 모델을 바꿔도 앱이 즉시 멈추지 않습니다.
+     */
+    const IMAGE_MODELS = ['gemini-3.1-flash-image', 'gemini-2.5-flash-image'];
+
+    let response: any = null;
+    let lastError: any = null;
+
+    for (const model of IMAGE_MODELS) {
+      try {
+        // Gemini 3.x: 해상도 2K 지정 (기본값 1K는 건축 시안용으로 부족)
+        // 주의: responseModalities에 TEXT가 섞이면 해상도 설정이 무시되는
+        //       알려진 이슈가 있어 IMAGE 단독으로 지정
+        const isGen3 = model.startsWith('gemini-3');
+        const config = isGen3
+          ? {
+              responseModalities: ['IMAGE'],
+              imageConfig: { imageSize: '2K' },
+            }
+          : undefined;
+
+        response = await ai.models.generateContent({
+          model,
+          contents: {
+            parts: parts,
+          },
+          ...(config ? { config } : {}),
+        });
+        break; // 성공하면 중단
+      } catch (err: any) {
+        const msg = (err?.message || '').toLowerCase();
+        // 모델이 없거나 지원 종료된 경우에만 다음 모델로 폴백
+        if (msg.includes('not found') || msg.includes('not_found') || msg.includes('404') || msg.includes('deprecated') || msg.includes('not supported')) {
+          lastError = err;
+          continue;
+        }
+        throw err; // 키 오류·쿼터 초과 등은 그대로 전달
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error('사용 가능한 이미지 생성 모델을 찾지 못했습니다.');
+    }
 
     let generatedImageBase64 = '';
     if (response.candidates && response.candidates[0].content.parts) {

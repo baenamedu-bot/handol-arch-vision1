@@ -37,7 +37,7 @@ export const readFileToDataUrl = (file: File): Promise<string> => {
 };
 
 /**
- * Adds the "edit by. Handol" watermark to an image.
+ * Adds the "유앤미스튜디오" brand watermark to an image.
  * Returns the watermarked image as a Data URL.
  */
 export const addWatermark = (base64Image: string): Promise<string> => {
@@ -66,7 +66,7 @@ export const addWatermark = (base64Image: string): Promise<string> => {
       ctx.drawImage(img, 0, 0);
 
       // Configure Watermark
-      const text = "edit by. Handol";
+      const text = "유앤미스튜디오";
       
       // Dynamic font size based on image width (approx 2.5% of width)
       const fontSize = Math.max(20, Math.floor(canvas.width * 0.025));

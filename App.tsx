@@ -6,6 +6,7 @@ import MaskEditor from './components/MaskEditor';
 import { ImageFile, GenerationState, HistoryItem } from './types';
 import { generateArchitecturalEdit } from './services/geminiService';
 import { addWatermark, fileToBase64 } from './utils/imageProcessing';
+import { saveImage, shareImage, reportContent } from './utils/native';
 
 const App: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
@@ -51,17 +52,17 @@ const App: React.FC = () => {
     }
   };
 
-  // ✅ 수정됨: AIza... 및 AQ. 형식 모두 허용
+  // 키 형식 검증 없음 — Google 키 정책이 계속 바뀌므로 실제 생성 성공 여부로만 판단
   const handleSaveCustomKey = () => {
     const trimmedKey = keyInputValue.trim();
-    if (trimmedKey.startsWith('AIza') || trimmedKey.startsWith('AQ.')) {
-      localStorage.setItem('ARCH_VISION_KEY', trimmedKey);
-      setUserApiKey(trimmedKey);
-      setHasApiKey(true);
-      setState({ ...state, error: null });
-    } else {
-      alert('올바른 Gemini API 키 형식이 아닙니다. (AIza... 또는 AQ.로 시작해야 합니다)');
+    if (!trimmedKey) {
+      alert('API 키를 입력해주세요.');
+      return;
     }
+    localStorage.setItem('ARCH_VISION_KEY', trimmedKey);
+    setUserApiKey(trimmedKey);
+    setHasApiKey(true);
+    setState({ ...state, error: null });
   };
 
   const handleLogoutKey = () => {
@@ -133,9 +134,13 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       const errorMsg = error.message || "알 수 없는 오류가 발생했습니다.";
-      if (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("invalid") || errorMsg.includes("403")) {
-        alert("API 키가 유효하지 않습니다. 다시 확인해주세요.");
-        handleLogoutKey();
+      if (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("invalid") || errorMsg.includes("403") || errorMsg.includes("401")) {
+        // 키를 자동 삭제하지 않음 — 일시적 오류일 수 있으므로 안내만 표시
+        setState({
+          isGenerating: false,
+          error: "API 키 인증에 실패했습니다. 아래를 확인해주세요.\n① 키를 복사할 때 앞뒤 공백이 들어가지 않았는지\n② aistudio.google.com/apikey 에서 키가 살아있는지\n③ 그래도 안 되면 새 키를 발급받아 '키 삭제' 후 다시 입력해주세요.",
+        });
+        return;
       }
       setState({
         isGenerating: false,
@@ -144,13 +149,27 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownload = (imageUrl: string, index: number) => {
-    const link = document.createElement('a');
-    link.href = imageUrl;
-    link.download = `Handol_Arch_Edit_Step${index + 1}_${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async (imageUrl: string, index: number) => {
+    const fileName = `Younme_ArchVision_Step${index + 1}_${Date.now()}.png`;
+    try {
+      const mode = await saveImage(imageUrl, fileName);
+      if (mode === 'native') alert('갤러리에 저장되었습니다. (Pictures/ARCH-VISION)');
+    } catch (e) {
+      console.error(e);
+      alert('저장에 실패했습니다. 다시 시도해주세요.');
+    }
+  };
+
+  const handleShare = async (imageUrl: string, index: number) => {
+    try {
+      await shareImage(imageUrl, `Younme_ArchVision_Step${index + 1}.png`);
+    } catch (e) {
+      console.error(e); // 사용자가 공유 시트를 닫은 경우 포함 — 무시
+    }
+  };
+
+  const handleReport = (item: HistoryItem) => {
+    reportContent(`STEP 프롬프트: ${item.prompt}`);
   };
 
   const handleReset = () => {
@@ -220,7 +239,7 @@ const App: React.FC = () => {
                     value={keyInputValue}
                     onChange={(e) => setKeyInputValue(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveCustomKey()}
-                    placeholder="Gemini API Key (AIza... 또는 AQ....)"
+                    placeholder="발급받은 Gemini API 키 붙여넣기"
                     className="block w-full pl-10 pr-3 py-4 border border-slate-300 rounded-2xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 sm:text-sm transition-all"
                   />
                 </div>
@@ -230,14 +249,41 @@ const App: React.FC = () => {
                 >
                   키 저장 후 시작하기
                 </button>
-                <div className="text-center">
-                  <a
-                    href="https://aistudio.google.com/app/apikey"
-                    target="_blank"
-                    className="text-xs text-orange-600 hover:underline font-medium inline-flex items-center"
-                  >
-                    내 API 키는 어디서 받나요? <ExternalLink className="w-3 h-3 ml-1" />
-                  </a>
+                <div className="space-y-2">
+                  <details className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden" open>
+                    <summary className="px-4 py-3 text-sm font-bold text-slate-700 cursor-pointer select-none">
+                      🔑 API 키 발급 방법 (무료 · 2분)
+                    </summary>
+                    <div className="px-4 pb-4 text-xs text-slate-600 leading-relaxed space-y-2">
+                      <p>1. 아래 버튼으로 <b>Google AI Studio</b> 접속 후 구글 계정으로 로그인</p>
+                      <p>2. <b>「API 키 만들기(Create API key)」</b> 버튼 클릭</p>
+                      <p>3. 프로젝트 선택 화면이 나오면 <b>「새 프로젝트에서 키 만들기」</b> 선택</p>
+                      <p>4. 생성된 키를 <b>복사</b>해서 위 입력란에 붙여넣기 → 「키 저장 후 시작하기」</p>
+                      <p className="text-slate-400">※ 무료 등급으로도 사용 가능하며, 키는 비밀번호처럼 타인과 공유하지 마세요.</p>
+                      <a
+                        href="https://aistudio.google.com/apikey"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center w-full py-2.5 mt-1 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors"
+                      >
+                        Google AI Studio 키 발급 페이지 열기 <ExternalLink className="w-3 h-3 ml-1.5" />
+                      </a>
+                    </div>
+                  </details>
+
+                  <details className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
+                    <summary className="px-4 py-3 text-sm font-bold text-amber-800 cursor-pointer select-none">
+                      ⚠️ 발급이 안 되나요? (해결 방법)
+                    </summary>
+                    <div className="px-4 pb-4 text-xs text-amber-900 leading-relaxed space-y-2">
+                      <p>• <b>회사·학교 계정</b>(구글 워크스페이스)은 관리자가 발급을 막아둔 경우가 많습니다. → <b>개인 지메일 계정</b>으로 다시 시도해보세요.</p>
+                      <p>• 버튼이 안 보이거나 오류가 뜨면, <b>제미니에게 직접 물어보는 게 가장 빠릅니다.</b> 제미니(gemini.google.com)를 열고 아래처럼 질문하세요:</p>
+                      <div className="bg-white border border-amber-200 rounded-lg p-3 text-slate-700">
+                        "Google AI Studio에서 Gemini API 키를 발급받으려는데 <b>[화면에 뜬 오류 메시지를 그대로 붙여넣기]</b> 라고 나와. 해결 방법을 단계별로 알려줘."
+                      </div>
+                      <p>• 화면 문구는 구글이 수시로 바꾸므로, 위 방법으로 물어보면 항상 최신 절차를 안내받을 수 있습니다.</p>
+                    </div>
+                  </details>
                 </div>
               </div>
             )}
@@ -386,7 +432,7 @@ const App: React.FC = () => {
               </div>
 
               {state.error && (
-                <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-start text-sm">
+                <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-start text-sm whitespace-pre-line">
                   <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
                   {state.error}
                 </div>
@@ -503,12 +549,29 @@ const App: React.FC = () => {
                             </p>
                           </div>
                           <div className="mt-4 flex justify-between items-center pt-2 border-t border-slate-200/50">
-                            <button
-                              onClick={() => handleDownload(item.imageUrl, index)}
-                              className="flex items-center text-xs text-slate-500 hover:text-slate-800"
-                            >
-                              <Download className="w-3.5 h-3.5 mr-1" /> 다운로드
-                            </button>
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => handleDownload(item.imageUrl, index)}
+                                className="flex items-center text-xs text-slate-500 hover:text-slate-800"
+                              >
+                                <Download className="w-3.5 h-3.5 mr-1" /> 저장
+                              </button>
+                              <button
+                                onClick={() => handleShare(item.imageUrl, index)}
+                                className="flex items-center text-xs text-slate-500 hover:text-slate-800"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 mr-1" /> 공유
+                              </button>
+                              {item.role === 'generated' && (
+                                <button
+                                  onClick={() => handleReport(item)}
+                                  className="flex items-center text-xs text-slate-400 hover:text-red-500"
+                                  title="부적절한 AI 생성 결과 신고"
+                                >
+                                  <AlertCircle className="w-3.5 h-3.5 mr-1" /> 신고
+                                </button>
+                              )}
+                            </div>
                             {!isActive && (
                               <button
                                 onClick={() => handleSelectStep(item.id)}
