@@ -1,0 +1,108 @@
+# =============================================================================
+# iOS 빌드 (클라우드 Mac) — Windows 개발환경에서 Mac 없이 iOS를 빌드하는 통로
+#
+# compile-check: 서명 없이 컴파일만 검증
+# archive-upload: 서명 + App Store Connect(TestFlight) 업로드
+#   필요한 GitHub Secrets:
+#     IOS_CERT_P12_BASE64   배포 인증서(.p12) base64
+#     IOS_CERT_PASSWORD     .p12 비밀번호
+#     IOS_PROFILE_BASE64    "ArchVision AppStore" 프로비저닝 프로파일 base64
+#     ASC_API_KEY_ID        App Store Connect API 키 ID
+#     ASC_API_ISSUER_ID     App Store Connect Issuer ID
+#     ASC_API_KEY_BASE64    .p8 키 파일 base64
+#   설정 스크립트: scripts/set-ios-secrets.ps1 (로컬에서 실행)
+# =============================================================================
+name: iOS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "compile-check(서명 없음) 또는 archive-upload(TestFlight 업로드)"
+        required: true
+        default: "compile-check"
+        type: choice
+        options: [compile-check, archive-upload]
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install deps + sync iOS
+        run: |
+          npm ci || npm install
+          npm run build
+          npx cap sync ios
+
+      # ---- 서명 없이 컴파일 검증 ----
+      - name: Compile check (unsigned)
+        if: inputs.mode == 'compile-check'
+        working-directory: ios/App
+        run: |
+          xcodebuild build \
+            -project App.xcodeproj -scheme App \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      # ---- 서명 + 아카이브 + TestFlight 업로드 ----
+      - name: Import signing assets
+        if: inputs.mode == 'archive-upload'
+        env:
+          CERT_B64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          CERT_PW: ${{ secrets.IOS_CERT_PASSWORD }}
+          PROFILE_B64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          KEYCHAIN=build.keychain
+          security create-keychain -p ci $KEYCHAIN
+          security default-keychain -s $KEYCHAIN
+          security unlock-keychain -p ci $KEYCHAIN
+          echo "$CERT_B64" | base64 --decode > cert.p12
+          security import cert.p12 -k $KEYCHAIN -P "$CERT_PW" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci $KEYCHAIN
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROFILE_B64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
+
+      - name: Archive
+        if: inputs.mode == 'archive-upload'
+        working-directory: ios/App
+        run: |
+          xcodebuild archive \
+            -project App.xcodeproj -scheme App \
+            -archivePath build/App.xcarchive \
+            -destination 'generic/platform=iOS'
+
+      - name: Export IPA & upload to TestFlight
+        if: inputs.mode == 'archive-upload'
+        working-directory: ios/App
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_ISSUER: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_KEY_B64: ${{ secrets.ASC_API_KEY_BASE64 }}
+        run: |
+          cat > ExportOptions.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>29L55JD67L</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>kr.younme.archvision</key><string>ArchVision AppStore</string>
+            </dict>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ExportOptions.plist
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_KEY_B64" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+          xcrun altool --upload-app -f build/ipa/App.ipa -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER"
