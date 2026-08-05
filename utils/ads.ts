@@ -14,7 +14,7 @@ const IDS = {
   },
   ios: {
     banner: 'ca-app-pub-2229314122089046/5631478461',
-    interstitial: 'ca-app-pub-2229314122089046/IOS_INTERSTITIAL', // iOS 전면 단위 생성 후 교체
+    interstitial: 'ca-app-pub-2229314122089046/5228987936',
   },
 };
 
