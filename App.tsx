@@ -7,6 +7,7 @@ import { ImageFile, GenerationState, HistoryItem } from './types';
 import { generateArchitecturalEdit } from './services/geminiService';
 import { addWatermark, fileToBase64 } from './utils/imageProcessing';
 import { saveImage, shareImage, reportContent } from './utils/native';
+import { initAds, onGenerationComplete } from './utils/ads';
 
 const App: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
@@ -43,6 +44,7 @@ const App: React.FC = () => {
       }
     };
     checkKey();
+    initAds(); // 네이티브 앱에서만 동작, 웹은 no-op
   }, []);
 
   const handleOpenKeySelector = async () => {
@@ -131,6 +133,7 @@ const App: React.FC = () => {
       setPrompt('');
       setMaskBase64(null);
       setState({ isGenerating: false, error: null });
+      onGenerationComplete(); // 생성 3회마다 전면 광고 (네이티브 전용)
     } catch (error: any) {
       console.error(error);
       const errorMsg = error.message || "알 수 없는 오류가 발생했습니다.";
